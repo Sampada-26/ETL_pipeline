@@ -1,36 +1,98 @@
-# Simple ETL Pipeline (Products API + SQLite)
+# Product ETL Pipeline (Python + SQLite)
 
-This project has a simple ETL pipeline in Python.
+A clean and beginner-friendly ETL project that extracts product data, transforms it, and loads it into SQLite.
 
-## What it does
+## Project Overview
 
-1. Extracts product data from one API: `https://dummyjson.com/products?limit=20`
-2. If API fails, it uses fallback local product data
-3. Prints **RAW DATA** (before transformation)
-4. Transforms data:
-   - fills missing values
-   - converts datatypes
-   - converts discount percentage to ratio
-   - creates final price after discount
-   - normalizes text fields
-5. Prints **TRANSFORMED DATA** (after transformation)
-6. Loads both datasets to SQLite
+This project simulates a real ETL workflow:
 
-## SQLite tables
+1. **Extract** product data from an API (`dummyjson`)  
+2. Use **fallback local data** if API is unavailable  
+3. Display **RAW DATA** clearly before transformation  
+4. **Transform** data by cleaning, type conversion, and derived calculations  
+5. Display **TRANSFORMED DATA** clearly after transformation  
+6. **Load** raw and transformed data into SQLite tables with an audit log  
 
-- `raw_table` -> raw extracted data
-- `staging_table` -> transformed data
-- `etl_job_audit` -> pipeline run logs
+## ETL Flow
 
-## Run
+```text
+API / Fallback -> RAW DATA -> Transform -> TRANSFORMED DATA -> SQLite
+```
+
+## Key Transformations
+
+| Transformation | Description |
+|---|---|
+| Missing value handling | Fills null values for price, rating, stock, etc. |
+| Type conversion | Converts numeric fields to proper numeric data types |
+| Discount conversion | Converts `discountPercentage` to `discount_ratio` |
+| Derived metric | Creates `final_price` after discount |
+| Text normalization | Cleans title/category/brand fields |
+
+## SQLite Tables
+
+| Table | Purpose |
+|---|---|
+| `raw_table` | Stores extracted raw product data |
+| `staging_table` | Stores cleaned and transformed product data |
+| `etl_job_audit` | Stores ETL run metadata (run id, row counts, status) |
+
+## File Structure
+
+```text
+ETL_pipeline/
+|-- config.py
+|-- etl_pipeline.py
+|-- requirements.txt
+|-- README.md
+|-- warehouse.db
+|-- __pycache__/
+`-- venv/
+```
+
+## Tech Stack
+
+- Python 3
+- Pandas
+- Requests
+- SQLite (`sqlite3`)
+
+## Quick Start
+
+1. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
+```
+
+2. Run the pipeline:
+
+```bash
 ./venv/bin/python etl_pipeline.py
 ```
 
-## Files
+## Output Stages You Will See
 
-- `config.py` -> settings/constants
-- `etl_pipeline.py` -> ETL code
-- `warehouse.db` -> SQLite database (created/updated after run)
+- `[EXTRACT]` API fetch / fallback message  
+- `RAW DATA (Before Transformation)` section  
+- `[TRANSFORM]` transformation stage message  
+- `TRANSFORMED DATA (After Transformation)` section  
+- `[LOAD]` SQLite load message  
+- `ETL SUMMARY` with row counts and table names  
+
+## Sample SQL Checks
+
+```sql
+SELECT COUNT(*) FROM raw_table;
+SELECT COUNT(*) FROM staging_table;
+SELECT * FROM etl_job_audit ORDER BY rowid DESC LIMIT 5;
+```
+
+## Configuration
+
+All tunable values are in `config.py`:
+
+- API URL
+- request timeout
+- table names
+- default values used in transformations
