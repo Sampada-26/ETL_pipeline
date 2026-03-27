@@ -4,17 +4,17 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent
 SQLITE_DB_PATH = PROJECT_ROOT / "warehouse.db"
 
-# Popular public API for demo data
-API_URL = "https://dummyjson.com/users?limit=30"
+# Single API source (products)
+API_URL = "https://dummyjson.com/products?limit=20"
 REQUEST_TIMEOUT_SECONDS = 15
 
 # SQLite table names
-RAW_TABLE = "raw_users"
-STAGING_TABLE = "stg_users_cleaned"
-WAREHOUSE_DETAIL_TABLE = "dw_user_profile"
-WAREHOUSE_CITY_TABLE = "dw_city_metrics"
+RAW_TABLE = "raw_table"
+STAGING_TABLE = "staging_table"
 AUDIT_TABLE = "etl_job_audit"
 
-# Transformation settings
-SIMULATE_MISSING_AGE_EVERY_N = 6
-DEFAULT_AGE_FILL = 30
+# Defaults used during transformation
+DEFAULT_PRICE = 0.0
+DEFAULT_RATING = 0.0
+DEFAULT_STOCK = 0
+DEFAULT_DISCOUNT_PERCENTAGE = 0.0
