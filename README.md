@@ -1,4 +1,4 @@
-# Product ETL Pipeline (Python + SQLite)
+# ETL Pipeline (Python + SQLite)
 
 A clean and beginner-friendly ETL project that extracts product data, transforms it, and loads it into SQLite.
 
