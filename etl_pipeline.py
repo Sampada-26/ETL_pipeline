@@ -107,56 +107,36 @@ def transform_data(raw_df: pd.DataFrame) -> pd.DataFrame:
     """Clean and transform raw product data."""
     print("[TRANSFORM] Cleaning and transforming data...")
 
-    stg_df = raw_df.copy()
+    df = raw_df.copy()
+    for col in ["id", "title", "category", "brand", "price", "discountPercentage", "rating", "stock"]:
+        if col not in df.columns:
+            df[col] = None
 
-    # Ensure required columns exist
-    required_cols = [
-        "id",
-        "title",
-        "category",
-        "brand",
-        "price",
-        "discountPercentage",
-        "rating",
-        "stock",
-    ]
-    for col in required_cols:
-        if col not in stg_df.columns:
-            stg_df[col] = None
+    df["title"] = df["title"].fillna("Unknown Product").astype(str).str.strip()
+    df["category"] = df["category"].fillna("uncategorized").astype(str).str.strip().str.lower()
+    df["brand"] = df["brand"].fillna("unknown_brand").astype(str).str.strip()
 
-    # Text cleanup
-    stg_df["title"] = stg_df["title"].fillna("Unknown Product").astype(str).str.strip()
-    stg_df["category"] = stg_df["category"].fillna("uncategorized").astype(str).str.strip().str.lower()
-    stg_df["brand"] = stg_df["brand"].fillna("unknown_brand").astype(str).str.strip()
-
-    # Numeric type conversions + missing value handling
-    stg_df["price"] = pd.to_numeric(stg_df["price"], errors="coerce").fillna(DEFAULT_PRICE)
-    stg_df["discountPercentage"] = (
-        pd.to_numeric(stg_df["discountPercentage"], errors="coerce").fillna(DEFAULT_DISCOUNT_PERCENTAGE)
+    df["price"] = pd.to_numeric(df["price"], errors="coerce").fillna(DEFAULT_PRICE)
+    df["discountPercentage"] = pd.to_numeric(df["discountPercentage"], errors="coerce").fillna(
+        DEFAULT_DISCOUNT_PERCENTAGE
     )
-    stg_df["rating"] = pd.to_numeric(stg_df["rating"], errors="coerce").fillna(DEFAULT_RATING)
-    stg_df["stock"] = pd.to_numeric(stg_df["stock"], errors="coerce").fillna(DEFAULT_STOCK).astype(int)
+    df["rating"] = pd.to_numeric(df["rating"], errors="coerce").fillna(DEFAULT_RATING)
+    df["stock"] = pd.to_numeric(df["stock"], errors="coerce").fillna(DEFAULT_STOCK).astype(int)
 
-    # Unit conversion style transformation: percentage -> ratio
-    stg_df["discount_ratio"] = (stg_df["discountPercentage"] / 100).round(3)
-
-    # Final price after discount
-    stg_df["final_price"] = (stg_df["price"] * (1 - stg_df["discount_ratio"])).round(2)
-
-    # Normalized fields for analytics
-    stg_df["category_normalized"] = stg_df["category"].str.upper()
-    stg_df["transformed_at"] = datetime.now(timezone.utc).isoformat()
-
-    return stg_df
+    df["discount_ratio"] = (df["discountPercentage"] / 100).round(3)
+    df["final_price"] = (df["price"] * (1 - df["discount_ratio"])).round(2)
+    df["category_normalized"] = df["category"].str.upper()
+    df["transformed_at"] = datetime.now(timezone.utc).isoformat()
+    return df
 
 
-def load_to_sqlite(raw_df: pd.DataFrame, stg_df: pd.DataFrame, run_id: str) -> None:
+def load_to_sqlite(raw_df: pd.DataFrame, staging_df: pd.DataFrame, run_id: str) -> None:
     """Load raw and transformed data into SQLite."""
     print("[LOAD] Loading data into SQLite...")
 
     with sqlite3.connect(SQLITE_DB_PATH) as conn:
         raw_df.to_sql(RAW_TABLE, conn, if_exists="replace", index=False)
-        stg_df.to_sql(STAGING_TABLE, conn, if_exists="replace", index=False)
+        staging_df.to_sql(STAGING_TABLE, conn, if_exists="replace", index=False)
 
         audit_row = pd.DataFrame(
             [
@@ -164,7 +144,7 @@ def load_to_sqlite(raw_df: pd.DataFrame, stg_df: pd.DataFrame, run_id: str) -> N
                     "run_id": run_id,
                     "run_time_utc": datetime.now(timezone.utc).isoformat(),
                     "raw_rows": len(raw_df),
-                    "staging_rows": len(stg_df),
+                    "staging_rows": len(staging_df),
                     "status": "SUCCESS",
                 }
             ]
@@ -185,10 +165,10 @@ def run_pipeline() -> None:
         ["id", "title", "category", "brand", "price", "discountPercentage", "rating", "stock"],
     )
 
-    stg_df = transform_data(raw_df)
+    staging_df = transform_data(raw_df)
     show_data(
         "TRANSFORMED DATA (After Transformation)",
-        stg_df,
+        staging_df,
         [
             "id",
             "title",
@@ -203,13 +183,13 @@ def run_pipeline() -> None:
         ],
     )
 
-    load_to_sqlite(raw_df, stg_df, run_id)
+    load_to_sqlite(raw_df, staging_df, run_id)
 
     print("\n" + "=" * 70)
     print("ETL SUMMARY")
     print("=" * 70)
     print(f"Raw rows loaded        : {len(raw_df)}")
-    print(f"Transformed rows loaded: {len(stg_df)}")
+    print(f"Transformed rows loaded: {len(staging_df)}")
     print(f"Saved tables           : {RAW_TABLE}, {STAGING_TABLE}, {AUDIT_TABLE}")
     print("Pipeline completed successfully.")
 
