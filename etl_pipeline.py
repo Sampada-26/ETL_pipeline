@@ -28,6 +28,8 @@ from config import (
     STAGING_TABLE,
 )
 
+RAW_COLUMNS = ["id", "title", "category", "brand", "price", "discountPercentage", "rating", "stock"]
+
 
 def fallback_products() -> list[dict]:
     """Local fallback if API is unavailable."""
@@ -78,6 +80,9 @@ def extract_data() -> pd.DataFrame:
         response.raise_for_status()
         payload = response.json()
         products = payload.get("products", [])
+        if not products:
+            print("[EXTRACT] API returned 0 rows. Using fallback products.")
+            products = fallback_products()
         print(f"[EXTRACT] API success. Rows fetched: {len(products)}")
         return pd.DataFrame(products)
     except Exception as exc:
@@ -100,7 +105,7 @@ def show_data(title: str, df: pd.DataFrame, columns: list[str]) -> None:
     print(f"Rows: {len(view_df)} | Columns: {len(view_df.columns)}")
     print(f"Column names: {', '.join(view_df.columns)}")
     print("-" * 70)
-    print(view_df.to_string(index=False))
+    print(view_df.fillna("MISSING").to_string(index=False))
 
 
 def transform_data(raw_df: pd.DataFrame) -> pd.DataFrame:
@@ -135,7 +140,8 @@ def load_to_sqlite(raw_df: pd.DataFrame, staging_df: pd.DataFrame, run_id: str) 
     print("[LOAD] Loading data into SQLite...")
 
     with sqlite3.connect(SQLITE_DB_PATH) as conn:
-        raw_df.to_sql(RAW_TABLE, conn, if_exists="replace", index=False)
+        raw_for_storage = raw_df[[col for col in RAW_COLUMNS if col in raw_df.columns]].copy()
+        raw_for_storage.to_sql(RAW_TABLE, conn, if_exists="replace", index=False)
         staging_df.to_sql(STAGING_TABLE, conn, if_exists="replace", index=False)
 
         audit_row = pd.DataFrame(
@@ -162,7 +168,7 @@ def run_pipeline() -> None:
     show_data(
         "RAW DATA (Before Transformation)",
         raw_df,
-        ["id", "title", "category", "brand", "price", "discountPercentage", "rating", "stock"],
+        RAW_COLUMNS,
     )
 
     staging_df = transform_data(raw_df)
