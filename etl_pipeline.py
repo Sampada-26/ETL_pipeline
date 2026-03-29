@@ -29,6 +29,47 @@ from config import (
 )
 
 RAW_COLUMNS = ["id", "title", "category", "brand", "price", "discountPercentage", "rating", "stock"]
+TRANSFORMED_PREVIEW_COLUMNS = [
+    "id",
+    "title",
+    "category_normalized",
+    "brand",
+    "price",
+    "discountPercentage",
+    "discount_ratio",
+    "final_price",
+    "rating",
+    "stock",
+]
+STAGING_COLUMNS = [
+    "id",
+    "title",
+    "category",
+    "category_normalized",
+    "brand",
+    "price",
+    "discountPercentage",
+    "discount_ratio",
+    "final_price",
+    "rating",
+    "stock",
+    "transformed_at",
+]
+TEXT_DEFAULTS = {
+    "title": "Unknown Product",
+    "category": "uncategorized",
+    "brand": "unknown_brand",
+}
+NUMERIC_DEFAULTS = {
+    "price": DEFAULT_PRICE,
+    "discountPercentage": DEFAULT_DISCOUNT_PERCENTAGE,
+    "rating": DEFAULT_RATING,
+    "stock": DEFAULT_STOCK,
+}
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def fallback_products() -> list[dict]:
@@ -113,25 +154,22 @@ def transform_data(raw_df: pd.DataFrame) -> pd.DataFrame:
     print("[TRANSFORM] Cleaning and transforming data...")
 
     df = raw_df.copy()
-    for col in ["id", "title", "category", "brand", "price", "discountPercentage", "rating", "stock"]:
+    for col in RAW_COLUMNS:
         if col not in df.columns:
             df[col] = None
 
-    df["title"] = df["title"].fillna("Unknown Product").astype(str).str.strip()
-    df["category"] = df["category"].fillna("uncategorized").astype(str).str.strip().str.lower()
-    df["brand"] = df["brand"].fillna("unknown_brand").astype(str).str.strip()
+    for col, default in TEXT_DEFAULTS.items():
+        df[col] = df[col].fillna(default).astype(str).str.strip()
+    df["category"] = df["category"].str.lower()
 
-    df["price"] = pd.to_numeric(df["price"], errors="coerce").fillna(DEFAULT_PRICE)
-    df["discountPercentage"] = pd.to_numeric(df["discountPercentage"], errors="coerce").fillna(
-        DEFAULT_DISCOUNT_PERCENTAGE
-    )
-    df["rating"] = pd.to_numeric(df["rating"], errors="coerce").fillna(DEFAULT_RATING)
-    df["stock"] = pd.to_numeric(df["stock"], errors="coerce").fillna(DEFAULT_STOCK).astype(int)
+    for col, default in NUMERIC_DEFAULTS.items():
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(default)
+    df["stock"] = df["stock"].astype(int)
 
     df["discount_ratio"] = (df["discountPercentage"] / 100).round(3)
     df["final_price"] = (df["price"] * (1 - df["discount_ratio"])).round(2)
     df["category_normalized"] = df["category"].str.upper()
-    df["transformed_at"] = datetime.now(timezone.utc).isoformat()
+    df["transformed_at"] = utc_now_iso()
     return df
 
 
@@ -141,14 +179,16 @@ def load_to_sqlite(raw_df: pd.DataFrame, staging_df: pd.DataFrame, run_id: str) 
 
     with sqlite3.connect(SQLITE_DB_PATH) as conn:
         raw_for_storage = raw_df[[col for col in RAW_COLUMNS if col in raw_df.columns]].copy()
+        staging_for_storage = staging_df[[col for col in STAGING_COLUMNS if col in staging_df.columns]].copy()
+
         raw_for_storage.to_sql(RAW_TABLE, conn, if_exists="replace", index=False)
-        staging_df.to_sql(STAGING_TABLE, conn, if_exists="replace", index=False)
+        staging_for_storage.to_sql(STAGING_TABLE, conn, if_exists="replace", index=False)
 
         audit_row = pd.DataFrame(
             [
                 {
                     "run_id": run_id,
-                    "run_time_utc": datetime.now(timezone.utc).isoformat(),
+                    "run_time_utc": utc_now_iso(),
                     "raw_rows": len(raw_df),
                     "staging_rows": len(staging_df),
                     "status": "SUCCESS",
@@ -175,18 +215,7 @@ def run_pipeline() -> None:
     show_data(
         "TRANSFORMED DATA (After Transformation)",
         staging_df,
-        [
-            "id",
-            "title",
-            "category_normalized",
-            "brand",
-            "price",
-            "discountPercentage",
-            "discount_ratio",
-            "final_price",
-            "rating",
-            "stock",
-        ],
+        TRANSFORMED_PREVIEW_COLUMNS,
     )
 
     load_to_sqlite(raw_df, staging_df, run_id)
