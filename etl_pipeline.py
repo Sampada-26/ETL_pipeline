@@ -12,177 +12,195 @@ except ModuleNotFoundError as exc:
 
 try:
     import requests
-except ModuleNotFoundError:
-    requests = None
+except ModuleNotFoundError as exc:
+    raise SystemExit(
+        "Missing dependency: requests. Install with `pip install -r requirements.txt` "
+        "or run with `./venv/bin/python etl_pipeline.py`."
+    ) from exc
 
 from config import (
     API_URL,
     AUDIT_TABLE,
-    DEFAULT_DISCOUNT_PERCENTAGE,
-    DEFAULT_PRICE,
-    DEFAULT_RATING,
-    DEFAULT_STOCK,
+    DEFAULT_CREATED_AT,
+    DEFAULT_FORKS,
+    DEFAULT_LANGUAGE,
+    DEFAULT_OPEN_ISSUES,
+    DEFAULT_OWNER_LOGIN,
+    DEFAULT_OWNER_TYPE,
+    DEFAULT_PRIVATE,
+    DEFAULT_REPO_NAME,
+    DEFAULT_STARS,
+    DEFAULT_WATCHERS,
     RAW_TABLE,
     REQUEST_TIMEOUT_SECONDS,
     SQLITE_DB_PATH,
     STAGING_TABLE,
 )
 
-RAW_COLUMNS = ["id", "title", "category", "brand", "price", "discountPercentage", "rating", "stock"]
+RAW_COLUMNS = [
+    "id",
+    "repo",
+    "owner",
+    "owner_type",
+    "language",
+    "stars",
+    "forks",
+    "issues",
+    "watchers",
+    "private",
+    "created_on",
+]
+
 TRANSFORMED_PREVIEW_COLUMNS = [
     "id",
-    "title",
-    "category_normalized",
-    "brand",
-    "price",
-    "discountPercentage",
-    "discount_ratio",
-    "final_price",
-    "rating",
-    "stock",
+    "repo",
+    "owner",
+    "language_upper",
+    "stars",
+    "forks",
+    "issues",
+    "watchers",
+    "popularity",
+    "activity",
 ]
+
 STAGING_COLUMNS = [
     "id",
-    "title",
-    "category",
-    "category_normalized",
-    "brand",
-    "price",
-    "discountPercentage",
-    "discount_ratio",
-    "final_price",
-    "rating",
-    "stock",
-    "transformed_at",
+    "repo",
+    "owner",
+    "owner_lower",
+    "owner_type",
+    "language",
+    "language_upper",
+    "stars",
+    "forks",
+    "issues",
+    "watchers",
+    "popularity",
+    "activity",
+    "private",
+    "created_on",
+    "cleaned_on",
 ]
-TEXT_DEFAULTS = {
-    "title": "Unknown Product",
-    "category": "uncategorized",
-    "brand": "unknown_brand",
-}
-NUMERIC_DEFAULTS = {
-    "price": DEFAULT_PRICE,
-    "discountPercentage": DEFAULT_DISCOUNT_PERCENTAGE,
-    "rating": DEFAULT_RATING,
-    "stock": DEFAULT_STOCK,
-}
 
 
-def utc_now_iso() -> str:
+def utc_now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-def fallback_products() -> list[dict]:
-    """Local fallback if API is unavailable."""
-    return [
-        {
-            "id": 1,
-            "title": "Wireless Mouse",
-            "category": "electronics",
-            "brand": "LogiTech",
-            "price": 899,
-            "discountPercentage": 10,
-            "rating": 4.4,
-            "stock": 120,
-        },
-        {
-            "id": 2,
-            "title": "Notebook",
-            "category": "stationery",
-            "brand": None,
-            "price": 60,
-            "discountPercentage": None,
-            "rating": 4.1,
-            "stock": None,
-        },
-        {
-            "id": 3,
-            "title": "Coffee Mug",
-            "category": None,
-            "brand": "HomeBasics",
-            "price": None,
-            "discountPercentage": 5,
-            "rating": None,
-            "stock": 80,
-        },
-    ]
-
-
-def extract_data() -> pd.DataFrame:
-    """Extract products from one API, fallback to local data if needed."""
-    print("[EXTRACT] Fetching products from API...")
-
-    if requests is None:
-        print("[EXTRACT] `requests` not installed. Using fallback products.")
-        return pd.DataFrame(fallback_products())
+def extract_data():
+    print("[EXTRACT] Fetching repositories from GitHub API...")
 
     try:
-        response = requests.get(API_URL, timeout=REQUEST_TIMEOUT_SECONDS)
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "beginner-etl-pipeline",
+        }
+        response = requests.get(API_URL, timeout=REQUEST_TIMEOUT_SECONDS, headers=headers)
         response.raise_for_status()
         payload = response.json()
-        products = payload.get("products", [])
-        if not products:
-            print("[EXTRACT] API returned 0 rows. Using fallback products.")
-            products = fallback_products()
-        print(f"[EXTRACT] API success. Rows fetched: {len(products)}")
-        return pd.DataFrame(products)
     except Exception as exc:
-        print(f"[EXTRACT] API failed ({exc}). Using fallback products.")
-        return pd.DataFrame(fallback_products())
+        raise SystemExit(f"[EXTRACT] API fetch failed: {exc}")
+
+    if isinstance(payload, list):
+        records = payload
+    elif isinstance(payload, dict):
+        records = payload.get("items", [])
+    else:
+        records = []
+
+    if not records:
+        raise SystemExit("[EXTRACT] API returned no repository rows. Update API_URL in config.py")
+
+    rows = []
+    for repo in records:
+        if not isinstance(repo, dict):
+            continue
+
+        owner = repo.get("owner") or {}
+        row = {
+            "id": repo.get("id"),
+            "repo": repo.get("name"),
+            "owner": owner.get("login"),
+            "owner_type": owner.get("type"),
+            "language": repo.get("language"),
+            "stars": repo.get("stargazers_count"),
+            "forks": repo.get("forks_count"),
+            "issues": repo.get("open_issues_count"),
+            "watchers": repo.get("watchers_count"),
+            "private": repo.get("private"),
+            "created_on": repo.get("created_at"),
+        }
+        rows.append(row)
+
+    raw_df = pd.DataFrame(rows)
+
+    for column_name in RAW_COLUMNS:
+        if column_name not in raw_df.columns:
+            raw_df[column_name] = None
+
+    raw_df = raw_df[RAW_COLUMNS].copy()
+    print(f"[EXTRACT] API success. Rows fetched: {len(raw_df)}")
+    return raw_df
 
 
-def show_data(title: str, df: pd.DataFrame, columns: list[str]) -> None:
-    """Show clean stage output using selected columns."""
+def show_data(title, df, columns):
     print(f"\n{'=' * 70}")
-    print(f"{title}")
+    print(title)
     print(f"{'=' * 70}")
 
     if df.empty:
         print("No data available.")
         return
 
-    selected_columns = [col for col in columns if col in df.columns]
+    selected_columns = [column for column in columns if column in df.columns]
     view_df = df[selected_columns] if selected_columns else df
+
     print(f"Rows: {len(view_df)} | Columns: {len(view_df.columns)}")
     print(f"Column names: {', '.join(view_df.columns)}")
     print("-" * 70)
     print(view_df.fillna("MISSING").to_string(index=False))
 
 
-def transform_data(raw_df: pd.DataFrame) -> pd.DataFrame:
-    """Clean and transform raw product data."""
+def transform_data(raw_df):
     print("[TRANSFORM] Cleaning and transforming data...")
 
     df = raw_df.copy()
-    for col in RAW_COLUMNS:
-        if col not in df.columns:
-            df[col] = None
 
-    for col, default in TEXT_DEFAULTS.items():
-        df[col] = df[col].fillna(default).astype(str).str.strip()
-    df["category"] = df["category"].str.lower()
+    df["id"] = pd.to_numeric(df["id"], errors="coerce").fillna(0).astype(int)
+    df["repo"] = df["repo"].fillna(DEFAULT_REPO_NAME).astype(str).str.strip()
+    df["owner"] = df["owner"].fillna(DEFAULT_OWNER_LOGIN).astype(str).str.strip()
+    df["owner_type"] = df["owner_type"].fillna(DEFAULT_OWNER_TYPE).astype(str).str.strip()
+    df["language"] = df["language"].fillna(DEFAULT_LANGUAGE).astype(str).str.strip().str.lower()
 
-    for col, default in NUMERIC_DEFAULTS.items():
-        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(default)
-    df["stock"] = df["stock"].astype(int)
+    df["stars"] = pd.to_numeric(df["stars"], errors="coerce").fillna(DEFAULT_STARS).astype(int)
+    df["forks"] = pd.to_numeric(df["forks"], errors="coerce").fillna(DEFAULT_FORKS).astype(int)
+    df["issues"] = pd.to_numeric(df["issues"], errors="coerce").fillna(DEFAULT_OPEN_ISSUES).astype(int)
+    df["watchers"] = pd.to_numeric(df["watchers"], errors="coerce").fillna(DEFAULT_WATCHERS).astype(int)
 
-    df["discount_ratio"] = (df["discountPercentage"] / 100).round(3)
-    df["final_price"] = (df["price"] * (1 - df["discount_ratio"])).round(2)
-    df["category_normalized"] = df["category"].str.upper()
-    df["transformed_at"] = utc_now_iso()
+    df["private"] = df["private"].fillna(DEFAULT_PRIVATE)
+    df["private"] = df["private"].astype(bool)
+    df["created_on"] = df["created_on"].fillna(DEFAULT_CREATED_AT).astype(str).str.strip()
+
+    df["owner_lower"] = df["owner"].str.lower()
+    df["language_upper"] = df["language"].str.upper()
+    df["popularity"] = df["stars"] + df["watchers"]
+    df["activity"] = df["forks"] + df["issues"]
+    df["cleaned_on"] = utc_now_iso()
+
+    rows_before = len(df)
+    df = df.drop_duplicates(subset=["id"], keep="first").reset_index(drop=True)
+    print(f"[TRANSFORM] Duplicate rows removed: {rows_before - len(df)}")
+
     return df
 
 
-def load_to_sqlite(raw_df: pd.DataFrame, staging_df: pd.DataFrame, run_id: str) -> None:
-    """Load raw and transformed data into SQLite."""
+def load_to_sqlite(raw_df, staging_df, run_id):
     print("[LOAD] Loading data into SQLite...")
 
-    with sqlite3.connect(SQLITE_DB_PATH) as conn:
-        raw_for_storage = raw_df[[col for col in RAW_COLUMNS if col in raw_df.columns]].copy()
-        staging_for_storage = staging_df[[col for col in STAGING_COLUMNS if col in staging_df.columns]].copy()
-
-        raw_for_storage.to_sql(RAW_TABLE, conn, if_exists="replace", index=False)
-        staging_for_storage.to_sql(STAGING_TABLE, conn, if_exists="replace", index=False)
+    with sqlite3.connect(SQLITE_DB_PATH) as connection:
+        raw_df[RAW_COLUMNS].to_sql(RAW_TABLE, connection, if_exists="replace", index=False)
+        staging_df[STAGING_COLUMNS].to_sql(STAGING_TABLE, connection, if_exists="replace", index=False)
 
         audit_row = pd.DataFrame(
             [
@@ -195,28 +213,21 @@ def load_to_sqlite(raw_df: pd.DataFrame, staging_df: pd.DataFrame, run_id: str) 
                 }
             ]
         )
-        audit_row.to_sql(AUDIT_TABLE, conn, if_exists="append", index=False)
+        audit_row.to_sql(AUDIT_TABLE, connection, if_exists="append", index=False)
 
 
-def run_pipeline() -> None:
+def run_pipeline():
     run_id = str(uuid4())
-    print("\nStarting Product ETL Pipeline")
+
+    print("\nStarting GitHub ETL Pipeline")
     print(f"Run ID: {run_id}")
     print(f"SQLite DB: {SQLITE_DB_PATH}")
 
     raw_df = extract_data()
-    show_data(
-        "RAW DATA (Before Transformation)",
-        raw_df,
-        RAW_COLUMNS,
-    )
+    show_data("RAW GITHUB DATA", raw_df, RAW_COLUMNS)
 
     staging_df = transform_data(raw_df)
-    show_data(
-        "TRANSFORMED DATA (After Transformation)",
-        staging_df,
-        TRANSFORMED_PREVIEW_COLUMNS,
-    )
+    show_data("TRANSFORMED GITHUB DATA", staging_df, TRANSFORMED_PREVIEW_COLUMNS)
 
     load_to_sqlite(raw_df, staging_df, run_id)
 
