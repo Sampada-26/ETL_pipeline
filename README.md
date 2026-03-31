@@ -1,43 +1,42 @@
 # ETL Pipeline (Python + SQLite)
 
-A clean and beginner-friendly ETL project that extracts product data, transforms it, and loads it into SQLite.
+A beginner-friendly ETL project that extracts GitHub repository data, transforms it with Pandas, and loads it into SQLite.
 
 ## Project Overview
 
-This project simulates a real ETL workflow:
+This pipeline follows a simple ETL flow:
 
-1. **Extract** product data from an API (`dummyjson`)  
-2. Use **fallback local data** if API is unavailable  
-3. Display **RAW DATA** clearly before transformation  
-4. **Transform** data by cleaning, type conversion, and derived calculations  
-5. Display **TRANSFORMED DATA** clearly after transformation  
-6. **Load** raw and transformed data into SQLite tables with an audit log  
+1. Extract repository data from the GitHub Search API
+2. Show the raw data in the terminal
+3. Transform and clean the dataset
+4. Load both raw and transformed data into SQLite
+5. Record each run in an audit table
 
 ## ETL Flow
 
 ```text
-API / Fallback -> RAW DATA -> Transform -> TRANSFORMED DATA -> SQLite
+GitHub API -> RAW DATA -> Transform -> TRANSFORMED DATA -> SQLite
 ```
 
-## Key Transformations
+## What Gets Transformed
 
-| Transformation | Description |
-|---|---|
-| Missing value handling | Fills null values for price, rating, stock, etc. |
-| Type conversion | Converts numeric fields to proper numeric data types |
-| Discount conversion | Converts `discountPercentage` to `discount_ratio` |
-| Derived metric | Creates `final_price` after discount |
-| Text normalization | Cleans title/category/brand fields |
+The script in `etl_pipeline.py` performs these transformations:
+
+- fills missing values for repo, owner, language, and numeric metrics
+- converts numeric fields like stars, forks, issues, and watchers
+- normalizes text fields such as `owner_lower` and `language_upper`
+- creates derived columns like `popularity` and `activity`
+- removes duplicate rows based on repository id
 
 ## SQLite Tables
 
 | Table | Purpose |
 |---|---|
-| `raw_table` | Stores extracted raw product data |
-| `staging_table` | Stores cleaned and transformed product data |
-| `etl_job_audit` | Stores ETL run metadata (run id, row counts, status) |
+| `raw_table` | Stores extracted GitHub repository data |
+| `staging_table` | Stores cleaned and transformed data |
+| `etl_job_audit` | Stores ETL run metadata such as run ID, row counts, and status |
 
-## File Structure
+## Project Files
 
 ```text
 ETL_pipeline/
@@ -46,41 +45,56 @@ ETL_pipeline/
 |-- requirements.txt
 |-- README.md
 |-- warehouse.db
-|-- __pycache__/
 `-- venv/
 ```
 
-## Tech Stack
+## Requirements
 
 - Python 3
 - Pandas
 - Requests
-- SQLite (`sqlite3`)
+- Internet access for the GitHub API call
 
-## Quick Start
+## How To Run
 
-1. Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-2. Run the pipeline:
+### Option 1: Run with the existing virtual environment
 
 ```bash
+cd /home/vimla/ETL_pipeline
 ./venv/bin/python etl_pipeline.py
 ```
 
-## Output Stages You Will See
+### Option 2: Create a fresh virtual environment
 
-- `[EXTRACT]` API fetch / fallback message  
-- `RAW DATA (Before Transformation)` section  
-- `[TRANSFORM]` transformation stage message  
-- `TRANSFORMED DATA (After Transformation)` section  
-- `[LOAD]` SQLite load message  
-- `ETL SUMMARY` with row counts and table names  
+```bash
+cd /home/vimla/ETL_pipeline
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python etl_pipeline.py
+```
 
-## Sample SQL Checks
+## Expected Output
+
+When the pipeline runs successfully, you will see stages like:
+
+- `[EXTRACT] Fetching repositories from GitHub API...`
+- `RAW GITHUB DATA`
+- `[TRANSFORM] Cleaning and transforming data...`
+- `TRANSFORMED GITHUB DATA`
+- `[LOAD] Loading data into SQLite...`
+- `ETL SUMMARY`
+- `Pipeline completed successfully.`
+
+## Verify The Data
+
+You can inspect the SQLite tables with:
+
+```bash
+sqlite3 warehouse.db
+```
+
+Then run:
 
 ```sql
 SELECT COUNT(*) FROM raw_table;
@@ -90,9 +104,10 @@ SELECT * FROM etl_job_audit ORDER BY rowid DESC LIMIT 5;
 
 ## Configuration
 
-All tunable values are in `config.py`:
+You can change the pipeline settings in `config.py`, including:
 
 - API URL
 - request timeout
+- SQLite database path
 - table names
-- default values used in transformations
+- default values used during transformation
