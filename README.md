@@ -57,17 +57,21 @@ ETL_pipeline/
 
 ## How To Run
 
+Open a terminal in your project folder first. For example:
+
+```bash
+cd /path/to/ETL_pipeline
+```
+
 ### Option 1: Run with the existing virtual environment
 
 ```bash
-cd /home/vimla/ETL_pipeline
 ./venv/bin/python etl_pipeline.py
 ```
 
 ### Option 2: Create a fresh virtual environment
 
 ```bash
-cd /home/vimla/ETL_pipeline
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
